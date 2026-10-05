@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#05070b" />
+    <meta name="description" content="Hiro AR Iron Man — Web AR marker experience" />
+    <title>HIRO / IRON MAN — Web AR</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet" />
+    <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+    <style>
+      :root {
+        --ink: #f2fbff;
+        --muted: rgba(214, 236, 241, 0.68);
+        --dim: rgba(214, 236, 241, 0.42);
+        --line: rgba(158, 231, 239, 0.18);
+        --cyan: #5cf5ff;
+        --cyan-soft: rgba(92, 245, 255, 0.13);
+        --amber: #ffbd58;
+        --red: #ff4e57;
+        --panel: rgba(5, 10, 15, 0.74);
+        --hud-font: "Rajdhani", system-ui, sans-serif;
+        --body-font: "Inter", system-ui, sans-serif;
+      }
+
+      * { box-sizing: border-box; }
+      html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #05070b; }
+      body { color: var(--ink); font-family: var(--body-font); touch-action: manipulation; }
+      a-scene { position: fixed; inset: 0; z-index: 0; }
+      a-scene canvas { z-index: 0 !important; }
+
+      .screen { position: fixed; inset: 0; z-index: 2; pointer-events: none; }
+      .screen::after { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at 50% 48%, transparent 18%, rgba(2, 5, 8, 0.18) 68%, rgba(2, 5, 8, 0.6)); pointer-events: none; }
+      .topbar, .bottom-bar, .guide, .reticle, .toast, .permission { pointer-events: auto; }
+
+      .topbar { position: absolute; inset: max(18px, env(safe-area-inset-top)) 18px auto; display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+      .brand { display: flex; align-items: center; gap: 10px; }
+      .reactor-mark { width: 28px; height: 28px; border: 1px solid var(--cyan); border-radius: 50%; position: relative; box-shadow: 0 0 20px rgba(92, 245, 255, 0.34), inset 0 0 12px rgba(92, 245, 255, 0.22); }
+      .reactor-mark::before, .reactor-mark::after { content: ""; position: absolute; inset: 6px; border: 1px solid rgba(92, 245, 255, 0.75); border-radius: 50%; }
+      .reactor-mark::after { inset: 11px; background: var(--cyan); box-shadow: 0 0 12px var(--cyan); border: none; }
+      .brand-copy { line-height: 0.94; }
+      .brand-title { font: 700 17px/1 var(--hud-font); letter-spacing: 0.12em; }
+      .brand-sub { color: var(--dim); font: 600 9px/1.3 var(--hud-font); letter-spacing: 0.19em; margin-top: 4px; }
+
+      .status-pill { display: flex; align-items: center; gap: 9px; min-height: 34px; padding: 7px 11px; background: rgba(5, 10, 15, 0.62); border: 1px solid var(--line); border-radius: 4px; backdrop-filter: blur(12px); font: 600 11px/1 var(--hud-font); letter-spacing: 0.08em; color: var(--muted); text-transform: uppercase; }
+      .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 11px var(--amber); }
+      .status-pill.ready .status-dot { background: var(--cyan); box-shadow: 0 0 11px var(--cyan); }
+      .status-pill.alert .status-dot { background: var(--red); box-shadow: 0 0 11px var(--red); }
+
+      .guide { position: absolute; left: 18px; top: 104px; width: min(260px, calc(100vw - 36px)); padding: 14px 15px 15px; background: linear-gradient(135deg, rgba(5, 12, 17, 0.78), rgba(5, 8, 12, 0.38)); border-left: 2px solid var(--cyan); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); clip-path: polygon(0 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%); backdrop-filter: blur(9px); }
+      .eyebrow { color: var(--cyan); font: 700 10px/1 var(--hud-font); letter-spacing: 0.2em; text-transform: uppercase; }
+      .guide h1 { margin: 7px 0 5px; font: 700 25px/0.95 var(--hud-font); letter-spacing: 0.07em; }
+      .guide p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+      .scan-line { width: 100%; height: 1px; margin: 13px 0 10px; background: linear-gradient(90deg, var(--cyan), transparent); opacity: 0.72; }
+      .target-chip { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font: 600 10px/1 var(--hud-font); letter-spacing: 0.09em; }
+      .target-chip span { color: var(--ink); }
+
+      .reticle { position: absolute; left: 50%; top: 48%; width: min(42vw, 260px); aspect-ratio: 1; transform: translate(-50%, -50%); opacity: 0.64; }
+      .reticle::before, .reticle::after { content: ""; position: absolute; inset: 0; background: linear-gradient(var(--cyan), var(--cyan)) 0 0 / 27px 1px no-repeat, linear-gradient(var(--cyan), var(--cyan)) 0 0 / 1px 27px no-repeat, linear-gradient(var(--cyan), var(--cyan)) 100% 0 / 27px 1px no-repeat, linear-gradient(var(--cyan), var(--cyan)) 100% 0 / 1px 27px no-repeat, linear-gradient(var(--cyan), var(--cyan)) 0 100% / 27px 1px no-repeat, linear-gradient(var(--cyan), var(--cyan)) 0 100% / 1px 27px no-repeat, linear-gradient(var(--cyan), var(--cyan)) 100% 100% / 27px 1px no-repeat, linear-gradient(var(--cyan), var(--cyan)) 100% 100% / 1px 27px no-repeat; }
+      .reticle::after { inset: 18%; border: 1px solid rgba(92, 245, 255, 0.18); border-radius: 50%; background: none; animation: reticle-spin 14s linear infinite; }
+      .reticle-label { position: absolute; left: 50%; bottom: -28px; transform: translateX(-50%); white-space: nowrap; color: rgba(213, 245, 248, 0.52); font: 600 10px var(--hud-font); letter-spacing: 0.18em; }
+      @keyframes reticle-spin { to { transform: rotate(360deg); } }
+
+      .bottom-bar { position: absolute; left: 18px; right: 18px; bottom: max(18px, env(safe-area-inset-bottom)); display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; }
+      .telemetry { min-width: 130px; padding: 9px 11px; border-left: 1px solid var(--line); color: var(--dim); font: 600 10px/1.5 var(--hud-font); letter-spacing: 0.1em; text-transform: uppercase; }
+      .telemetry strong { display: block; color: var(--ink); font-size: 15px; letter-spacing: 0.08em; }
+      .control-dock { display: flex; gap: 10px; }
+      .control { appearance: none; min-width: 100px; height: 70px; border: 1px solid rgba(158, 231, 239, 0.28); border-radius: 6px; color: var(--ink); background: linear-gradient(145deg, rgba(14, 28, 36, 0.88), rgba(4, 9, 14, 0.78)); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02), 0 7px 28px rgba(0,0,0,0.22); font: 700 12px/1 var(--hud-font); letter-spacing: 0.15em; text-transform: uppercase; cursor: pointer; -webkit-tap-highlight-color: transparent; transition: transform 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease; }
+      .control:active { transform: translateY(2px) scale(0.98); }
+      .control .icon { display: block; margin: 0 auto 7px; color: var(--cyan); font-size: 23px; line-height: 1; text-shadow: 0 0 14px rgba(92,245,255,0.7); }
+      .control[aria-pressed="true"] { border-color: var(--cyan); color: var(--cyan); background: linear-gradient(145deg, rgba(11, 67, 75, 0.82), rgba(4, 24, 30, 0.86)); box-shadow: 0 0 24px rgba(92,245,255,0.16), inset 0 0 22px rgba(92,245,255,0.12); }
+      .control.flight[aria-pressed="true"] { border-color: var(--red); color: #ffd5d6; background: linear-gradient(145deg, rgba(91, 17, 25, 0.9), rgba(31, 7, 10, 0.86)); box-shadow: 0 0 24px rgba(255,78,87,0.2), inset 0 0 22px rgba(255,78,87,0.12); }
+      .control.flight[aria-pressed="true"] .icon { color: var(--red); text-shadow: 0 0 14px rgba(255,78,87,0.75); }
+
+      .toast { position: absolute; left: 50%; bottom: calc(max(18px, env(safe-area-inset-bottom)) + 89px); transform: translateX(-50%) translateY(7px); max-width: min(92vw, 440px); padding: 9px 13px; border: 1px solid var(--line); background: rgba(4, 10, 14, 0.78); color: var(--muted); font: 600 11px var(--hud-font); letter-spacing: 0.08em; text-align: center; opacity: 0; transition: opacity 200ms ease, transform 200ms ease; backdrop-filter: blur(10px); }
+      .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+      .permission { position: absolute; inset: 0; display: grid; place-items: center; padding: 28px; background: rgba(2, 5, 8, 0.92); backdrop-filter: blur(5px); transition: opacity 350ms ease, visibility 350ms ease; }
+      .permission.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+      .permission-card { width: min(430px, 100%); padding: 24px; border: 1px solid rgba(92,245,255,0.3); border-left: 3px solid var(--cyan); background: rgba(5, 11, 16, 0.94); box-shadow: 0 20px 60px rgba(0,0,0,0.42); }
+      .permission-card h2 { margin: 0 0 10px; font: 700 26px/1 var(--hud-font); letter-spacing: 0.06em; }
+      .permission-card p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.65; }
+      .permission-card .small { margin-top: 14px; color: var(--dim); font: 600 10px/1.6 var(--hud-font); letter-spacing: 0.08em; }
+
+      .loading { position: fixed; inset: 0; z-index: 5; display: grid; place-items: center; background: #05070b; transition: opacity 500ms ease, visibility 500ms ease; }
+      .loading.done { opacity: 0; visibility: hidden; pointer-events: none; }
+      .loading-inner { text-align: center; }
+      .loading-ring { width: 66px; height: 66px; margin: 0 auto 15px; border: 1px solid rgba(92,245,255,0.22); border-top-color: var(--cyan); border-radius: 50%; animation: reticle-spin 1s linear infinite; position: relative; }
+      .loading-ring::after { content: ""; position: absolute; inset: 17px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 18px var(--cyan); }
+      .loading-copy { color: var(--muted); font: 600 11px var(--hud-font); letter-spacing: 0.18em; text-transform: uppercase; }
+
+      @media (max-width: 560px) {
+        .topbar { inset-left: 14px; inset-right: 14px; }
+        .guide { left: 14px; top: 92px; width: min(235px, calc(100vw - 28px)); }
+        .guide h1 { font-size: 22px; }
+        .bottom-bar { left: 14px; right: 14px; }
+        .telemetry { display: none; }
+        .control { min-width: 96px; height: 68px; }
+        .reticle { width: min(56vw, 250px); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="loading" id="loading" aria-live="polite">
+      <div class="loading-inner"><div class="loading-ring"></div><div class="loading-copy">INITIALIZING SUIT SYSTEM</div></div>
+    </div>
+
+    <a-scene
+      id="arScene"
+      embedded
+      vr-mode-ui="enabled: false"
+      device-orientation-permission-ui="enabled: false"
+      renderer="antialias: true; colorManagement: true; physicallyCorrectLights: true"
+      arjs="sourceType: webcam; trackingMethod: best; debugUIEnabled: false; detectionMode: mono_and_matrix; patternRatio: 0.9; sourceWidth: 1280; sourceHeight: 720; displayWidth: 1280; displayHeight: 720"
+    >
+      <a-entity light="type: ambient; color: #9fc8d3; intensity: 1.6"></a-entity>
+      <a-entity light="type: directional; color: #fff3d0; intensity: 2.1" position="-1 3 2"></a-entity>
+      <a-entity light="type: point; color: #4cecff; intensity: 2.2; distance: 4" position="0 1.2 0.7"></a-entity>
+      <a-marker id="hiroMarker" preset="hiro" smooth="true" smoothCount="12" smoothTolerance="0.01" smoothThreshold="5">
+        <a-entity id="ironmanRig" ironman-model position="0 0 0"></a-entity>
+      </a-marker>
+      <a-entity camera></a-entity>
+    </a-scene>
+
+    <div class="screen" aria-label="แผงควบคุม AR">
+      <header class="topbar">
+        <div class="brand" aria-label="Hiro Iron Man">
+          <div class="reactor-mark" aria-hidden="true"></div>
+          <div class="brand-copy"><div class="brand-title">HIRO / IRON MAN</div><div class="brand-sub">MARKER FLIGHT INTERFACE</div></div>
+        </div>
+        <div class="status-pill" id="statusPill"><span class="status-dot"></span><span id="statusText">SCANNING</span></div>
+      </header>
+
+      <section class="guide" aria-label="คำแนะนำการใช้งาน">
+        <div class="eyebrow">AR TARGET / 01</div>
+        <h1>FIND HIRO.<br />SUIT UP.</h1>
+        <p>เล็งกล้องไปที่ Hiro marker ให้อยู่กลางกรอบ แล้วแตะคำสั่งเพื่อสั่งการเกราะ</p>
+        <div class="scan-line"></div>
+        <div class="target-chip">TARGET <span>HIRO STANDARD</span></div>
+      </section>
+
+      <div class="reticle" aria-hidden="true"><div class="reticle-label">ALIGN MARKER</div></div>
+
+      <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+      <div class="bottom-bar">
+        <div class="telemetry"><span>REACTOR OUTPUT</span><strong id="telemetryValue">STANDBY</strong><span id="telemetryMode">MARKER SEARCH</span></div>
+        <div class="control-dock">
+          <button class="control run" id="runButton" type="button" aria-pressed="false" aria-label="สั่งให้ Iron Man วิ่งไปข้างหน้า"><span class="icon">↠</span>RUN</button>
+          <button class="control flight" id="flightButton" type="button" aria-pressed="false" aria-label="สั่งให้ Iron Man บิน"><span class="icon">⇧</span>FLY</button>
+        </div>
+      </div>
+
+      <div class="permission hidden" id="permission" role="dialog" aria-modal="true" aria-labelledby="permissionTitle">
+        <div class="permission-card">
+          <div class="eyebrow">CAMERA LINK REQUIRED</div>
+          <h2 id="permissionTitle">เปิดสิทธิ์กล้องเพื่อเริ่ม AR</h2>
+          <p id="permissionText">ประสบการณ์นี้ต้องใช้กล้องหลังของโทรศัพท์ กรุณาอนุญาตกล้องและเปิดหน้านี้ผ่าน HTTPS หรือ localhost</p>
+          <p class="small">ถ้าใช้ GitHub Pages ให้เปิดลิงก์ด้วย HTTPS และแตะ Allow เมื่อเบราว์เซอร์ถามสิทธิ์</p>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        const TAU = Math.PI * 2;
+        const state = { markerFound: false, cameraReady: false, mode: 'idle' };
+        const loading = document.getElementById('loading');
+        const scene = document.getElementById('arScene');
+        const marker = document.getElementById('hiroMarker');
+        const rig = document.getElementById('ironmanRig');
+        const statusPill = document.getElementById('statusPill');
+        const statusText = document.getElementById('statusText');
+        const telemetryValue = document.getElementById('telemetryValue');
+        const telemetryMode = document.getElementById('telemetryMode');
+        const toast = document.getElementById('toast');
+        const permission = document.getElementById('permission');
+        const runButton = document.getElementById('runButton');
+        const flightButton = document.getElementById('flightButton');
+        let toastTimer;
+
+        function setStatus(label, variant) {
+          statusText.textContent = label;
+          statusPill.classList.toggle('ready', variant === 'ready');
+          statusPill.classList.toggle('alert', variant === 'alert');
+        }
+
+        function notify(message) {
+          toast.textContent = message;
+          toast.classList.add('show');
+          clearTimeout(toastTimer);
+          toastTimer = setTimeout(() => toast.classList.remove('show'), 2600);
+        }
+
+        function syncControls() {
+          const component = rig.components['ironman-model'];
+          const mode = component ? component.mode : state.mode;
+          state.mode = mode;
+          runButton.setAttribute('aria-pressed', String(mode === 'run'));
+          flightButton.setAttribute('aria-pressed', String(mode === 'flight'));
+          telemetryValue.textContent = mode === 'flight' ? 'BOOST 92%' : mode === 'run' ? 'NOMINAL' : state.markerFound ? 'READY' : 'STANDBY';
+          telemetryMode.textContent = mode === 'flight' ? 'THRUSTERS ACTIVE' : mode === 'run' ? 'FORWARD MOTION' : state.markerFound ? 'SUIT LINKED' : 'MARKER SEARCH';
+        }
+
+        function setMode(nextMode) {
+          const component = rig.components['ironman-model'];
+          if (!component) return;
+          if (!state.markerFound) {
+            notify('ยังไม่พบ Hiro marker — เล็งกล้องไปที่ marker ก่อน');
+            return;
+          }
+          component.setMode(component.mode === nextMode ? 'idle' : nextMode);
+          syncControls();
+          notify(component.mode === 'flight' ? 'ระบบขับดันพร้อม — IRON MAN กำลังบิน' : component.mode === 'run' ? 'ระบบขาเสริมกำลัง — วิ่งไปข้างหน้า' : 'กลับสู่โหมด standby');
+        }
+
+        runButton.addEventListener('click', () => setMode('run'));
+        flightButton.addEventListener('click', () => setMode('flight'));
+
+        function setMarkerState(found) {
+          state.markerFound = found;
+          if (found) {
+            setStatus('MARKER LOCKED', 'ready');
+            telemetryValue.textContent = 'READY';
+            telemetryMode.textContent = 'SUIT LINKED';
+            const component = rig.components['ironman-model'];
+            if (component) component.resetPosition();
+            notify('Hiro marker ถูกล็อก — เกราะพร้อมรับคำสั่ง');
+          } else {
+            setStatus('SCANNING', '');
+            syncControls();
+          }
+        }
+
+        marker.addEventListener('markerFound', () => setMarkerState(true));
+        marker.addEventListener('markerLost', () => {
+          setMarkerState(false);
+          notify('สัญญาณ marker หาย — ขยับกล้องให้เห็น Hiro ชัดขึ้น');
+        });
+        scene.addEventListener('camera-init', () => {
+          state.cameraReady = true;
+          permission.classList.add('hidden');
+          setStatus('SCANNING', '');
+        });
+        scene.addEventListener('camera-error', () => {
+          permission.classList.remove('hidden');
+          setStatus('CAMERA ERROR', 'alert');
+          document.getElementById('permissionText').textContent = 'เบราว์เซอร์ไม่สามารถเปิดกล้องได้ ตรวจสอบสิทธิ์กล้องในการตั้งค่า และเปิดเว็บผ่าน HTTPS หรือ localhost';
+        });
+        scene.addEventListener('loaded', () => {
+          loading.classList.add('done');
+          if (location.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(location.hostname)) {
+            permission.classList.remove('hidden');
+            document.getElementById('permissionText').textContent = 'หน้านี้ต้องเปิดผ่าน HTTPS เพื่อให้เบราว์เซอร์อนุญาตกล้อง — ใช้ GitHub Pages หรือเซิร์ฟเวอร์ HTTPS แล้วลองใหม่';
+            setStatus('HTTPS REQUIRED', 'alert');
+          }
+          syncControls();
+        });
+
+        if (!window.AFRAME || !window.THREE) {
+          loading.classList.add('done');
+          permission.classList.remove('hidden');
+          document.getElementById('permissionText').textContent = 'โหลดเอนจิน AR ไม่สำเร็จ ตรวจสอบอินเทอร์เน็ตแล้วรีเฟรชหน้าอีกครั้ง';
+          return;
+        }
+
+        function mat(color, roughness, metalness, emissive, emissiveIntensity) {
+          return new THREE.MeshPhysicalMaterial({ color, roughness: roughness || 0.28, metalness: metalness == null ? 0.9 : metalness, clearcoat: 0.62, clearcoatRoughness: 0.18, emissive: emissive || 0x000000, emissiveIntensity: emissiveIntensity || 0 });
+        }
+
+        function mesh(geometry, material, position, scale, rotation) {
+          const item = new THREE.Mesh(geometry, material);
+          if (position) item.position.set(position[0], position[1], position[2]);
+          if (scale) item.scale.set(scale[0], scale[1], scale[2]);
+          if (rotation) item.rotation.set(rotation[0], rotation[1], rotation[2]);
+          item.castShadow = true;
+          item.receiveShadow = true;
+          return item;
+        }
+
+        function addSegment(group, material, x, y, z, length, width, depth, rotationZ) {
+          const segment = mesh(new THREE.BoxGeometry(width, length, depth), material, [x, y, z], [1, 1, 1], [0, 0, rotationZ || 0]);
+          group.add(segment);
+          return segment;
+        }
+
+        AFRAME.registerComponent('ironman-model', {
+          init: function () {
+            this.mode = 'idle';
+            this.elapsed = 0;
+            this.forwardDistance = 0;
+            this.root = new THREE.Group();
+            this.body = new THREE.Group();
+            this.leftArm = new THREE.Group();
+            this.rightArm = new THREE.Group();
+            this.leftLeg = new THREE.Group();
+            this.rightLeg = new THREE.Group();
+            this.thrusters = [];
+            this.flameCores = [];
+            this.reactor = null;
+            this.eyeLights = [];
+            this.buildModel();
+            this.root.add(this.body);
+            this.el.setObject3D('mesh', this.root);
+          },
+
+          buildModel: function () {
+            const red = mat(0x8d0b19, 0.2, 0.96);
+            const redDark = mat(0x3e0810, 0.24, 0.94);
+            const gold = mat(0xd7a52f, 0.19, 0.94);
+            const graphite = mat(0x111c24, 0.23, 0.96);
+            const rubber = mat(0x090d11, 0.72, 0.35);
+            const cyan = new THREE.MeshBasicMaterial({ color: 0x59f5ff, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending });
+            const hot = new THREE.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0.98, blending: THREE.AdditiveBlending });
+
+            const chest = mesh(new THREE.BoxGeometry(0.76, 0.88, 0.42), red, [0, 1.45, 0], [1, 1, 1]);
+            this.body.add(chest);
+            this.body.add(mesh(new THREE.BoxGeometry(0.57, 0.18, 0.45), redDark, [0, 1.82, 0.02]));
+            this.body.add(mesh(new THREE.BoxGeometry(0.76, 0.14, 0.46), gold, [0, 1.09, 0.01]));
+            this.body.add(mesh(new THREE.BoxGeometry(0.16, 0.64, 0.46), gold, [-0.3, 1.45, 0.02]));
+            this.body.add(mesh(new THREE.BoxGeometry(0.16, 0.64, 0.46), gold, [0.3, 1.45, 0.02]));
+
+            this.reactor = mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.025, 32), cyan, [0, 1.43, -0.225], [1, 1, 1], [Math.PI / 2, 0, 0]);
+            this.body.add(this.reactor);
+            this.body.add(mesh(new THREE.TorusGeometry(0.145, 0.014, 10, 32), cyan, [0, 1.43, -0.24], [1, 1, 1], [Math.PI / 2, 0, 0]));
+
+            const neck = mesh(new THREE.CylinderGeometry(0.13, 0.16, 0.16, 16), graphite, [0, 1.98, 0]);
+            this.body.add(neck);
+            this.body.add(mesh(new THREE.SphereGeometry(0.28, 24, 16), red, [0, 2.28, 0]));
+            this.body.add(mesh(new THREE.BoxGeometry(0.34, 0.26, 0.33), gold, [0, 2.26, -0.2]));
+            this.body.add(mesh(new THREE.BoxGeometry(0.1, 0.025, 0.035), cyan, [-0.085, 2.31, -0.37]));
+            this.body.add(mesh(new THREE.BoxGeometry(0.1, 0.025, 0.035), cyan, [0.085, 2.31, -0.37]));
+            this.body.add(mesh(new THREE.BoxGeometry(0.2, 0.07, 0.07), redDark, [0, 2.12, -0.22]));
+
+            this.leftArm.position.set(-0.53, 1.76, 0);
+            this.rightArm.position.set(0.53, 1.76, 0);
+            this.body.add(this.leftArm, this.rightArm);
+            this.buildArm(this.leftArm, red, gold, graphite, -1);
+            this.buildArm(this.rightArm, red, gold, graphite, 1);
+
+            this.leftLeg.position.set(-0.22, 1.04, 0);
+            this.rightLeg.position.set(0.22, 1.04, 0);
+            this.body.add(this.leftLeg, this.rightLeg);
+            this.buildLeg(this.leftLeg, red, gold, graphite, -1, cyan, hot);
+            this.buildLeg(this.rightLeg, red, gold, graphite, 1, cyan, hot);
+
+            const shoulderBar = mesh(new THREE.BoxGeometry(1.22, 0.18, 0.38), gold, [0, 1.78, 0]);
+            this.body.add(shoulderBar);
+            this.body.scale.set(0.86, 0.86, 0.86);
+            this.body.position.y = 0.1;
+          },
+
+          buildArm: function (group, red, gold, graphite, side) {
+            group.add(mesh(new THREE.SphereGeometry(0.22, 16, 12), red, [0, 0, 0], [1.15, 0.8, 1]));
+            group.add(mesh(new THREE.BoxGeometry(0.25, 0.55, 0.28), red, [0, -0.31, 0]));
+            group.add(mesh(new THREE.BoxGeometry(0.29, 0.13, 0.31), gold, [0, -0.12, -0.01]));
+            group.add(mesh(new THREE.CylinderGeometry(0.15, 0.13, 0.42, 12), graphite, [0, -0.68, 0], [1, 1, 1], [0, 0, 0]));
+            group.add(mesh(new THREE.BoxGeometry(0.26, 0.2, 0.27), gold, [0, -0.92, 0]));
+            group.add(mesh(new THREE.BoxGeometry(0.22, 0.28, 0.26), red, [0, -1.1, -0.01]));
+            const palm = mesh(new THREE.CylinderGeometry(0.105, 0.105, 0.025, 20), new THREE.MeshBasicMaterial({ color: 0x68f7ff, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending }), [0, -1.1, -0.14], [1, 1, 1], [Math.PI / 2, 0, 0]);
+            group.add(palm);
+          },
+
+          buildLeg: function (group, red, gold, graphite, side, cyan, hot) {
+            group.add(mesh(new THREE.BoxGeometry(0.3, 0.58, 0.35), red, [0, -0.3, 0]));
+            group.add(mesh(new THREE.BoxGeometry(0.34, 0.15, 0.37), gold, [0, -0.08, -0.01]));
+            group.add(mesh(new THREE.BoxGeometry(0.28, 0.57, 0.33), graphite, [0, -0.76, 0]));
+            group.add(mesh(new THREE.BoxGeometry(0.33, 0.14, 0.37), gold, [0, -0.97, 0]));
+            group.add(mesh(new THREE.BoxGeometry(0.38, 0.17, 0.58), red, [0, -1.12, -0.08]));
+            group.add(mesh(new THREE.BoxGeometry(0.2, 0.12, 0.03), cyan, [0, -1.2, -0.39]));
+
+            const thruster = new THREE.Group();
+            thruster.position.set(0, -1.24, -0.06);
+            const outer = mesh(new THREE.ConeGeometry(0.105, 0.34, 16), hot, [0, -0.17, 0]);
+            const inner = mesh(new THREE.ConeGeometry(0.052, 0.22, 16), cyan, [0, -0.27, 0]);
+            thruster.add(outer, inner);
+            thruster.visible = false;
+            group.add(thruster);
+            this.thrusters.push(thruster);
+            this.flameCores.push(inner);
+          },
+
+          setMode: function (mode) {
+            this.mode = mode;
+            const flying = mode === 'flight';
+            this.thrusters.forEach((thruster) => { thruster.visible = flying; });
+            if (this.mode === 'idle') {
+              this.root.rotation.set(0, 0, 0);
+              this.body.position.y = 0.1;
+            }
+          },
+
+          resetPosition: function () {
+            this.forwardDistance = 0;
+            this.el.object3D.position.set(0, 0, 0);
+            this.setMode('idle');
+          },
+
+          tick: function (time, delta) {
+            if (!this.body) return;
+            const dt = Math.min((delta || 16) / 1000, 0.05);
+            const t = (time || 0) / 1000;
+            this.elapsed += dt;
+            const stride = this.mode === 'run' ? Math.sin(t * 10) : Math.sin(t * 2.2) * 0.02;
+            const breathe = Math.sin(t * 2.4) * 0.018;
+            this.reactor.scale.setScalar(1 + Math.sin(t * 5.5) * 0.1);
+            this.body.position.y = (this.mode === 'flight' ? 0.31 : 0.1) + breathe + (this.mode === 'flight' ? Math.sin(t * 3.1) * 0.04 : 0);
+            this.root.rotation.z = this.mode === 'flight' ? Math.sin(t * 2.1) * 0.045 : 0;
+            this.root.rotation.x = this.mode === 'flight' ? -0.12 : 0;
+
+            this.leftArm.rotation.z = this.mode === 'run' ? stride * 0.42 : 0;
+            this.rightArm.rotation.z = this.mode === 'run' ? -stride * 0.42 : 0;
+            this.leftLeg.rotation.x = this.mode === 'run' ? -stride * 0.42 : 0;
+            this.rightLeg.rotation.x = this.mode === 'run' ? stride * 0.42 : 0;
+            this.body.rotation.x = this.mode === 'run' ? 0.05 : 0;
+
+            if (this.mode === 'run') {
+              this.forwardDistance += dt * 0.24;
+              this.el.object3D.position.z = -Math.min(this.forwardDistance, 1.5);
+              this.body.position.y += Math.abs(stride) * 0.018;
+            }
+            this.thrusters.forEach((thruster, index) => {
+              if (this.mode === 'flight') {
+                const pulse = 0.82 + (Math.sin(t * 16 + index) + 1) * 0.18;
+                thruster.scale.set(1, pulse, 1);
+                this.flameCores[index].material.opacity = 0.72 + Math.sin(t * 18 + index) * 0.2;
+              }
+            });
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>
